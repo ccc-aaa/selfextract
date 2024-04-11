@@ -271,30 +271,90 @@ func (se *selfExtractor) startup() {
 		return
 	}
 
+  cmdline := os.Getenv(EnvCmdline)
 	startup := os.Getenv(EnvStartup)
+
+  if cmdline == "" {
+    cmdline = "selfextract_cmdline"
+  }
+
 	if startup == "" {
 		startup = "selfextract_startup"
 	}
-	debug("using startup script", startup)
 
 	os.Setenv(EnvDir, se.extractDir)
+
+	debug("try using cmdline file", cmdline)
+	cmdlinePath := filepath.Join(se.extractDir, cmdline)
+  _, err := os.Stat(cmdlinePath)
+  if err == nil {
+    se.runCmdline(cmdlinePath)
+    return
+  }
+
+	debug("try using startup script", startup)
 	startupPath := filepath.Join(se.extractDir, startup)
-	cmd := exec.Command(startupPath, os.Args[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	err := cmd.Run()
-	if err != nil {
-		debug("startup script ended with error:", err)
-		var ex *exec.ExitError
-		if errors.As(err, &ex) {
-			se.exitCode <- ex.ExitCode()
-		} else {
-			se.exitCode <- 1
-		}
-		return
-	}
-	se.exitCode <- 0
+  _, err = os.Stat(startupPath)
+  if err == nil {
+    se.runStartup(startupPath)
+    return
+  }
+}
+
+func (se *selfExtractor) runStartup(path string) {
+  cmd := exec.Command(path, os.Args[1:]...)
+  cmd.Stdin = os.Stdin
+  cmd.Stderr = os.Stderr
+  cmd.Stdout = os.Stdout
+  err := cmd.Run()
+  if err != nil {
+  	debug("startup script ended with error:", err)
+  	var ex *exec.ExitError
+  	if errors.As(err, &ex) {
+  		se.exitCode <- ex.ExitCode()
+  	} else {
+  		se.exitCode <- 1
+  	}
+  	return
+  }
+  se.exitCode <- 0
+}
+
+func (se *selfExtractor) runCmdline(path string) {
+  cmdfile,err := os.Open(path)
+  if err != nil {
+    debug("failed to open cmdfile with error: ", err)
+    se.exitCode <- 1
+    return
+  }
+
+  cmdbytes,err := io.ReadAll(cmdfile)
+  if err != nil {
+    debug("failed to read cmdfile with error: ", err)
+    se.exitCode <- 1
+    return
+  }
+
+  defer cmdfile.Close()
+  cmdline := strings.TrimSpace(string(cmdbytes[:]))
+  cmdline = strings.ReplaceAll(cmdline, "__EXTRACT_DIR__", se.extractDir)
+  args := strings.Split(cmdline, " ")
+  cmd := exec.Command(args[0], args[1:]...)
+  cmd.Stdin = os.Stdin
+  cmd.Stderr = os.Stderr
+  cmd.Stdout = os.Stdout
+  err = cmd.Run()
+  if err != nil {
+  	debug("cmdline ended with error:", err)
+  	var ex *exec.ExitError
+  	if errors.As(err, &ex) {
+  		se.exitCode <- ex.ExitCode()
+  	} else {
+  		se.exitCode <- 1
+  	}
+  	return
+  }
+  se.exitCode <- 0
 }
 
 func (se *selfExtractor) cleanup() {
