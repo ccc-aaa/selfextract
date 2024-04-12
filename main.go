@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"crypto/sha512"
-	"encoding/hex"
 	"encoding/binary"
 	"flag"
 	"fmt"
@@ -31,7 +30,10 @@ func init() {
 }
 
 func main() {
-	stub, payload, key := readSelf()
+	self := openSelf()
+	defer self.Close()
+
+	payload, key := parseSelf(self)
 
 	if payload != nil {
 		extract(payload, key)
@@ -48,7 +50,8 @@ func main() {
 	flag.Parse()
 	verbose = verbose || *verboseFlg
 
-	create(stub, key, *createName, flag.Args(), *changeDir)
+	self.Seek(0, os.SEEK_SET)
+	create(self, key, *createName, flag.Args(), *changeDir)
 }
 
 func debug(v ...interface{}) {
@@ -93,8 +96,11 @@ func generateRandomKey() []byte {
 // a value much bigger than the expected size of the compiled stub.
 const maxBoundaryOffset = 100e6 // 100 MB
 
-func readSelf() ([]byte, io.ReadCloser, []byte) {
-	t := time.Now()
+// efficient read size
+const scanBlockSize = 128*1024 // 128 KB
+
+func openSelf() (io.ReadSeekCloser) {
+ 	t := time.Now()
 	exePath, err := os.Executable()
 	if err != nil {
 		panic(err)
@@ -104,48 +110,62 @@ func readSelf() ([]byte, io.ReadCloser, []byte) {
 		die("opening itself:", exePath, err)
 	}
 	debug("opened itself in", time.Since(t))
+	return self
+}
 
-	t = time.Now()
-	buf := make([]byte, maxBoundaryOffset+keyLength)
-	n, err := self.Read(buf)
-	var bufFull bool
-	if err == io.EOF {
-		bufFull = true
-	} else if err != nil {
-		die("reading itself:", err)
-	}
-	buf = buf[:n]
-	debug("read itself in", time.Since(t))
-
+func parseSelf(self io.ReadSeeker) (io.Reader, []byte) {
+	bdyOff := 0
+	bufFull := false
+	buf := make([]byte, scanBlockSize)
 	boundary := generateBoundary()
-	t = time.Now()
-	bdyOff := bytes.Index(buf[:maxBoundaryOffset], boundary)
+	t := time.Now()
+
+	for {
+		n, err := self.Read(buf)
+
+		if err == io.EOF {
+			bufFull = true
+			break
+		}
+
+		if err != nil {
+			die("reading itself:", err)
+		}
+
+		bOff := bytes.Index(buf[:n], boundary)
+		if bOff >= 0 {
+			bdyOff += bOff
+			break
+		}
+		bdyOff += scanBlockSize
+	}
 	debug("boundary search completed in", time.Since(t))
 
-	if bdyOff == -1 {
-		if bufFull {
-			die("boundary not found before byte", maxBoundaryOffset)
-		}
-		debug("no boundary")
-		self.Close()
-		return buf, nil, nil
+	if bufFull {
+		debug("cannot found boundary within threshold")
+		return nil, nil
 	}
+
 	debug("boundary found at", bdyOff)
 
-	keyOff := bdyOff + len(boundary)
-	payloadOff := keyOff + keyLength
-	key := buf[keyOff:payloadOff]
-	debug("key:", hex.EncodeToString(key))
-  payloadSizeBytes := buf[payloadOff:payloadOff+8]
-  payloadSize := int64(binary.LittleEndian.Uint64(payloadSizeBytes))
-  payloadOff = payloadOff + 8
-  debug("Payload size:", payloadSize)
-
-	_, err = self.Seek(int64(payloadOff), os.SEEK_SET)
+	self.Seek(int64(bdyOff+len(boundary)), os.SEEK_SET)
+	buf = make([]byte, keyLength+8)
+	_, err := self.Read(buf)
 	if err != nil {
-		die("seeking to start of payload:", err)
+		die("failed to read additional data from executable", err)
 	}
-	buf = buf[:bdyOff]
 
-	return buf, self, key
+	key := buf[:keyLength]
+	rawValue := binary.LittleEndian.Uint64(buf[keyLength:][:8])
+
+	if rawValue == 0xdeadbeefdeadbeef {
+		die("Invalid archive size.")
+	}
+
+	payloadSize := int64(rawValue)
+	reader := io.LimitReader(self, payloadSize)
+
+	debug("Payload size:", payloadSize)
+
+	return reader, key
 }

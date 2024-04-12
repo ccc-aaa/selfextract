@@ -11,7 +11,7 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-func create(stub, key []byte, out string, files []string, cd string) {
+func create(self io.Reader, key []byte, out string, files []string, cd string) {
 	if len(files) == 0 {
 		die("no files to archive")
 	}
@@ -21,7 +21,7 @@ func create(stub, key []byte, out string, files []string, cd string) {
 		die("opening output file:", err)
 	}
 
-	_, err = f.Write(stub)
+	_, err = io.Copy(f, self)
 	if err != nil {
 		die("writing stub to output file:", err)
 	}
@@ -36,7 +36,7 @@ func create(stub, key []byte, out string, files []string, cd string) {
 		die("writing key to output file:", err)
 	}
 
-  _, err = f.Write([]byte("\xde\xad\xbe\xef\xde\xad\xbe\xef"))
+  _, err = f.Write([]byte("\xef\xbe\xad\xde\xef\xbe\xad\xde"))
   if err != nil {
     die("writing placeholder for payload size", err)
   }

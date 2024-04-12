@@ -23,12 +23,12 @@ type selfExtractor struct {
 	extractDir  string
 	skipExtract bool
 	tempDir     bool
-	payload     io.ReadCloser
+	payload     io.Reader
 	key         []byte
 	exitCode    chan int
 }
 
-func extract(payload io.ReadCloser, key []byte) {
+func extract(payload io.Reader, key []byte) {
 	se := selfExtractor{
 		payload:  payload,
 		key:      key,
@@ -243,8 +243,6 @@ func (se *selfExtractor) extract() {
 			cleanupAndDie(se.extractDir, "unsupported file type in tar", hdr.Typeflag)
 		}
 	}
-
-	se.payload.Close()
 
 	se.createKeyFile()
 }
