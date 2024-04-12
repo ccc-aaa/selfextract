@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+  "encoding/binary"
 	"io"
 	"io/fs"
 	"os"
@@ -34,6 +35,16 @@ func create(stub, key []byte, out string, files []string, cd string) {
 	if err != nil {
 		die("writing key to output file:", err)
 	}
+
+  _, err = f.Write([]byte("\xde\xad\xbe\xef\xde\xad\xbe\xef"))
+  if err != nil {
+    die("writing placeholder for payload size", err)
+  }
+
+  offset, err := f.Seek(0, io.SeekCurrent)
+  if err != nil {
+    die("getting start position of payload:", err)
+  }
 
 	zWrt, err := zstd.NewWriter(f, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	if err != nil {
@@ -111,6 +122,21 @@ func create(stub, key []byte, out string, files []string, cd string) {
 	if err != nil {
 		die("closing zstd:", err)
 	}
+
+  payload_end, err := f.Seek(0, io.SeekCurrent)
+  if err != nil {
+    die("getting offset of end of payload:", err)
+  }
+
+  _, err = f.Seek(offset-8, io.SeekStart)
+  if err != nil {
+    die("seek back to payload size place holder");
+  }
+
+  buffer := make([]byte,8)
+  binary.LittleEndian.PutUint64(buffer, uint64(payload_end-offset))
+  f.Write(buffer)
+
 	err = f.Chmod(0755)
 	if err != nil {
 		die("making output file executable:", err)

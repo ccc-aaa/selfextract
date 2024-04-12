@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha512"
 	"encoding/hex"
+	"encoding/binary"
 	"flag"
 	"fmt"
 	"io"
@@ -135,6 +136,10 @@ func readSelf() ([]byte, io.ReadCloser, []byte) {
 	payloadOff := keyOff + keyLength
 	key := buf[keyOff:payloadOff]
 	debug("key:", hex.EncodeToString(key))
+  payloadSizeBytes := buf[payloadOff:payloadOff+8]
+  payloadSize := int64(binary.LittleEndian.Uint64(payloadSizeBytes))
+  payloadOff = payloadOff + 8
+  debug("Payload size:", payloadSize)
 
 	_, err = self.Seek(int64(payloadOff), os.SEEK_SET)
 	if err != nil {
