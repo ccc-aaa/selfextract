@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/google/shlex"
 )
 
 const keyFileName = ".selfextract.key"
@@ -336,7 +337,14 @@ func (se *selfExtractor) runCmdline(path string) {
   defer cmdfile.Close()
   cmdline := strings.TrimSpace(string(cmdbytes[:]))
   cmdline = strings.ReplaceAll(cmdline, "__EXTRACT_DIR__", se.extractDir)
-  args := strings.Split(cmdline, " ")
+  args, err := shlex.Split(cmdline)
+  if err != nil {
+    debug("failed to parse cmdline arguments", err)
+    se.exitCode <- 1
+    return
+  }
+
+  args = append(args, os.Args[1:]...)
   cmd := exec.Command(args[0], args[1:]...)
   cmd.Stdin = os.Stdin
   cmd.Stderr = os.Stderr
