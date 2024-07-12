@@ -19,8 +19,6 @@ var verbose bool
 const (
 	EnvVerbose      = "SELFEXTRACT_VERBOSE"
 	EnvDir          = "SELFEXTRACT_DIR"
-	EnvStartup      = "SELFEXTRACT_STARTUP"
-	EnvCmdline      = "SELFEXTRACT_CMDLINE"
 	EnvExtractOnly  = "SELFEXTRACT_EXTRACT_ONLY"
 	EnvGraceTimeout = "SELFEXTRACT_GRACE_TIMEOUT"
 )

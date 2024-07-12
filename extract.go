@@ -270,16 +270,7 @@ func (se *selfExtractor) startup() {
 		return
 	}
 
-  cmdline := os.Getenv(EnvCmdline)
-	startup := os.Getenv(EnvStartup)
-
-  if cmdline == "" {
-    cmdline = "selfextract_cmdline"
-  }
-
-	if startup == "" {
-		startup = "selfextract_startup"
-	}
+  cmdline := "selfextract_cmdline"
 
 	os.Setenv(EnvDir, se.extractDir)
 
@@ -290,33 +281,6 @@ func (se *selfExtractor) startup() {
     se.runCmdline(cmdlinePath)
     return
   }
-
-	debug("try using startup script", startup)
-	startupPath := filepath.Join(se.extractDir, startup)
-  _, err = os.Stat(startupPath)
-  if err == nil {
-    se.runStartup(startupPath)
-    return
-  }
-}
-
-func (se *selfExtractor) runStartup(path string) {
-  cmd := exec.Command(path, os.Args[1:]...)
-  cmd.Stdin = os.Stdin
-  cmd.Stderr = os.Stderr
-  cmd.Stdout = os.Stdout
-  err := cmd.Run()
-  if err != nil {
-  	debug("startup script ended with error:", err)
-  	var ex *exec.ExitError
-  	if errors.As(err, &ex) {
-  		se.exitCode <- ex.ExitCode()
-  	} else {
-  		se.exitCode <- 1
-  	}
-  	return
-  }
-  se.exitCode <- 0
 }
 
 func (se *selfExtractor) runCmdline(path string) {

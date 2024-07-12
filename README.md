@@ -31,11 +31,11 @@ Example:
 This command will create the `myarchive` archive in the current directory. It
 will contain the contents (`.`) of the `mydir` directory.
 
-### Startup script
+### Cmdline file
 
-The startup script that you want to run after extraction must be put in the
-archive just like any other file. By default it should be at the root and be
-named `selfextract_startup`.
+The command that you want to run after extraction must be put in the cmdline file
+that you want to run after extraction must be put in the archive just like any other file.
+It should be at the root and be named `selfextract_cmdline`.
 
 Example:
 
@@ -43,15 +43,15 @@ Example:
     ├── a
     ├── b
     ├── c
-    └── selfextract_startup
+    └── selfextract_cmdline
 
 If using the command given above to create the archive
-(`selfextract -C mydir .`), then the startup script will be automatically
+(`selfextract -C mydir .`), then the cmdline will be automatically
 launched after the files have been extracted.
 
 Note that this is why we want to write `-C mydir .` and not just `mydir`,
 because in that latter case the `mydir` directory itself will be in the archive
-at the root, and the startup script will not be at the root anymore.
+at the root, and the cmdline will not be at the root anymore.
 
 ### Execute the archive
 
