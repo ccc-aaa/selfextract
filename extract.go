@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,6 +28,61 @@ type selfExtractor struct {
 	payload     io.Reader
 	key         []byte
 	exitCode    chan int
+}
+
+func checkExecutable(path string) bool {
+	mntinf, err := os.Open("/proc/mounts")
+	defer mntinf.Close()
+
+	if err != nil {
+		debug("Failed to retrieve mountinfo, assume it's not.")
+		return false
+	}
+
+	raw, err := io.ReadAll(mntinf)
+
+	if err != nil {
+		debug("Failed to retrieve mountinfo, assume it's not.")
+		return false
+	}
+
+	data := string(raw[:])
+	mntp := ""
+	noexec := false
+
+	for _, entry := range strings.Split(data, "\n") {
+		fields := strings.Split(entry, " ")
+		if len(fields) < 2 {
+			continue
+		}
+
+		mountpoint, options := fields[1], fields[3]
+
+		if len(mountpoint) > len(path) {
+			continue
+		}
+
+		if mountpoint == path { // exact match, early return
+			mntp = mountpoint
+			noexec = slices.Contains(strings.Split(options, ","), "noexec")
+			break
+		}
+
+		if !strings.HasSuffix(mountpoint, "/") {
+			mountpoint += "/"
+		}
+
+		if strings.HasPrefix(path, mountpoint) {
+			if len(mntp) < len(mountpoint) {
+				mntp = mountpoint
+				noexec = slices.Contains(strings.Split(options, ","), "noexec")
+			}
+		}
+	}
+
+	debug(path, mntp, noexec)
+
+	return !noexec
 }
 
 func extract(payload io.Reader, key []byte) {
@@ -75,12 +131,38 @@ func (se *selfExtractor) getTarReader() *tar.Reader {
 	return tar.NewReader(zRdr)
 }
 
+func (se *selfExtractor) getCwd() (string) {
+	exe, err := os.Executable()
+	if err != nil {
+		die("Failed to retrieve current executable, refuse to continue.")
+	}
+
+	return filepath.Dir(exe)
+}
+
+func (se *selfExtractor) generateExtractDir() (string, error) {
+	tmp := os.TempDir()
+	pwd := se.getCwd()
+
+	if checkExecutable(tmp) {
+		return os.MkdirTemp("", "selfextract")
+	}
+
+	if checkExecutable(pwd) {
+		return os.MkdirTemp(pwd, "selfextract")
+	}
+
+	die("cannot find suitable directory for execution, please assign one manually.")
+
+	return "", errors.New("No suitable temp dir found.")
+}
+
 func (se *selfExtractor) prepareExtractDir() {
 	extractDir := os.Getenv(EnvDir)
 
 	if extractDir == "" {
 		var err error
-		se.extractDir, err = os.MkdirTemp("", "selfextract")
+		se.extractDir, err = se.generateExtractDir()
 		if err != nil {
 			die("creating temporary extraction directory:", err)
 		}
@@ -281,6 +363,7 @@ func (se *selfExtractor) startup() {
     se.runCmdline(cmdlinePath)
     return
   }
+	die("failed to find cmdline file, quitting...")
 }
 
 func (se *selfExtractor) runCmdline(path string) {
